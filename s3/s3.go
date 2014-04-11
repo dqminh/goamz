@@ -388,6 +388,39 @@ func (b *Bucket) GetBucketContents() (*map[string]Key, error) {
 	return &bucket_contents, nil
 }
 
+// Get metadata from the key without returning the key content
+func (b *Bucket) GetKey(path string) (*Key, error) {
+	req := &request{
+		bucket: b.Name,
+		path:   path,
+		method: "HEAD",
+	}
+	err := b.S3.prepare(req)
+	if err != nil {
+		return nil, err
+	}
+	key := &Key{}
+	for attempt := attempts.Start(); attempt.Next(); {
+		resp, err := b.S3.run(req, nil)
+		if shouldRetry(err) && attempt.HasNext() {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		key.Key = path
+		key.LastModified = resp.Header.Get("Last-Modified")
+		key.ETag = resp.Header.Get("ETag")
+		size, err := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
+		if err != nil {
+			return key, err
+		}
+		key.Size = size
+		break
+	}
+	return key, nil
+}
+
 // URL returns a non-signed URL that allows retriving the
 // object at path. It only works if the object is publicly
 // readable (see SignedURL).
